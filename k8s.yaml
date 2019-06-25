@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: state-api-statefulset
+spec:
+  selector:
+    matchLabels:
+      app: state-api # has to match .spec.template.metadata.labels
+  serviceName: "state-api-service"
+  replicas: 2 # by default is 1
+  template:
+    metadata:
+      labels:
+        app: state-api # has to match .spec.selector.matchLabels
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: state-api
+        image: docker.io/poweredsoft/stateapi:latest
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: state-disk
+          mountPath: /var/state
+        env:
+          - name: "STATE_STORAGE_PATH"
+            value: "/var/state" 
+  volumeClaimTemplates:
+  - metadata:
+      name: state-disk
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "default"
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: state-api-service
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: state-api
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: state-api-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    certmanager.k8s.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+spec:
+  tls:
+  - hosts: 
+    - state.mslink.net
+    secretName: state-api-certificate
+  rules:
+    - host: state.mslink.net
+      http:
+        paths:
+        - backend:
+            serviceName: state-api-service
+            servicePort: 80
+          path: /(.*)
